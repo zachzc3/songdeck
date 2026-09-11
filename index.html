@@ -41,10 +41,12 @@
   .stage .sub{color:var(--muted);font-size:.95rem}
   .cd{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:2rem}
   .btns{display:grid;gap:10px}
-  button{font:inherit;font-weight:650;border:1px solid var(--line);background:var(--panel);
-         color:var(--ink);border-radius:14px;padding:16px;cursor:pointer;-webkit-tap-highlight-color:transparent}
-  button:active{transform:translateY(1px)}
+  button, a.btn{font:inherit;font-weight:650;border:1px solid var(--line);background:var(--panel);
+         color:var(--ink);border-radius:14px;padding:16px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+         display:block;text-align:center;text-decoration:none}
+  button:active, a.btn:active{transform:translateY(1px)}
   button.primary{background:var(--accent);border-color:var(--accent);color:#1b0f0b;font-weight:750}
+  a.btn .hint{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-top:2px}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .idbox{display:flex;gap:8px}
   .idbox input{flex:1;font:inherit;background:#12141a;border:1px solid var(--line);color:var(--ink);
@@ -96,6 +98,9 @@
     return LENGTHS[1];
   }
   function mmss(s){ var m=Math.floor(s/60), r=s%60; return m+":"+(r<10?"0":"")+r; }
+  function ytWatchUrl(s){
+    return "https://www.youtube.com/watch?v=" + encodeURIComponent(s.yt) + (s.start ? "&t=" + s.start + "s" : "");
+  }
 
   function playClip(){
     if(!song || !song.yt) return;
@@ -185,6 +190,7 @@
     var html = [];
     if(isPlaying) html.push('<button class="primary" data-a="stop">&#9632; Stop</button>');
     else          html.push('<button class="primary" data-a="play">&#9654; Play ' + len.label + '</button>');
+    html.push('<a class="btn" href="' + ytWatchUrl(song) + '" target="_blank" rel="noopener">Open in YouTube &#8599;<span class="hint">ad-free if the phone is signed into Premium</span></a>');
     if(!revealed) html.push('<button data-a="reveal">Flip card</button>');
     html.push('<div class="row2"><button data-a="replay">Replay</button><button data-a="next">Next card</button></div>');
     btns.innerHTML = html.join("");
