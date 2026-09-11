@@ -1,0 +1,11 @@
+{
+  "name": "The Thousand-Song Deck",
+  "short_name": "Song Deck",
+  "description": "DJ companion for the music-timeline card game.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115"
+}

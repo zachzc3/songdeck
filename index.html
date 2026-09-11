@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>Song Deck</title>
+<style>
+  :root{ --bg:#0f1115; --panel:#1a1d24; --line:#2b2f38; --ink:#f0f1f4; --muted:#9aa1ae; --accent:#e0623f; }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;min-height:100dvh;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  /* the YouTube iframe has to be a real, on-screen box for mobile Safari to
+     play it — so we render it and lay an opaque cover over the top */
+  #ytbox{position:fixed;left:50%;top:12px;transform:translateX(-50%);
+         width:280px;height:158px;border-radius:14px;overflow:hidden;z-index:1}
+  #ytbox iframe{width:100%;height:100%;border:0}
+  #ytcover{position:fixed;left:50%;top:12px;transform:translateX(-50%);
+           width:280px;height:158px;border-radius:14px;z-index:2;
+           background:var(--panel);border:1px solid var(--line);
+           display:flex;align-items:center;justify-content:center;
+           font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  main{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;
+       width:100%;max-width:520px;margin:0 auto;padding:190px 24px 24px}
+  .pill{align-self:center;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:20px;
+         padding:28px 20px;text-align:center;min-height:180px;
+         display:flex;flex-direction:column;justify-content:center;gap:8px}
+  .stage .big{font-size:clamp(2.6rem,14vw,4.2rem);font-weight:800;letter-spacing:-.02em;line-height:1}
+  .stage .answer{font-size:1.35rem;font-weight:700;line-height:1.15}
+  .stage .sub{color:var(--muted);font-size:.95rem}
+  .cd{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:2rem}
+  .btns{display:grid;gap:10px}
+  button{font:inherit;font-weight:650;border:1px solid var(--line);background:var(--panel);
+         color:var(--ink);border-radius:14px;padding:16px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#1b0f0b;font-weight:750}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .idbox{display:flex;gap:8px}
+  .idbox input{flex:1;font:inherit;background:#12141a;border:1px solid var(--line);color:var(--ink);
+               border-radius:12px;padding:12px;text-transform:lowercase}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:12px}
+</style>
+</head>
+<body>
+<div id="ytbox"><div id="yt"></div></div>
+<div id="ytcover">&#9834; audio only</div>
+
+<main>
+  <div class="pill" id="pill">Timeline</div>
+  <div class="stage" id="stage"></div>
+  <div class="btns" id="btns"></div>
+</main>
+<footer><span id="status">loading&hellip;</span></footer>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+(function(){
+  "use strict";
+  var CLIP = 30;
+  var DATA = null, player = null, apiReady = false, wantPlay = false;
+  var song = null, revealed = false, clipLeft = 0, cdTimer = null, clipTimer = null;
+
+  window.onYouTubeIframeAPIReady = function(){
+    player = new YT.Player("yt", {
+      width:"280", height:"158",
+      playerVars:{ controls:0, disablekb:1, modestbranding:1, playsinline:1, rel:0, fs:0 },
+      events:{ onReady:function(){ apiReady = true; if(wantPlay){ wantPlay = false; playClip(); } } }
+    });
+  };
+
+  function playClip(){
+    if(!song || !song.yt) return;
+    stopTimers();
+    if(!apiReady){ wantPlay = true; return; }
+    try{ player.loadVideoById({ videoId: song.yt, startSeconds: song.start || 0 }); }catch(e){}
+    clipLeft = CLIP; render();
+    cdTimer = setInterval(function(){
+      clipLeft--;
+      var el = document.getElementById("cd");
+      if(el) el.textContent = clipLeft + "s";
+      if(clipLeft <= 0){ clearInterval(cdTimer); cdTimer = null; render(); }
+    }, 1000);
+    clipTimer = setTimeout(function(){ try{ player.pauseVideo(); }catch(e){} clipTimer = null; }, CLIP * 1000);
+  }
+  function stopTimers(){
+    if(cdTimer){ clearInterval(cdTimer); cdTimer = null; }
+    if(clipTimer){ clearTimeout(clipTimer); clipTimer = null; }
+    try{ if(player && player.pauseVideo) player.pauseVideo(); }catch(e){}
+  }
+  function playing(){ return !!cdTimer; }
+
+  function loadData(){
+    return fetch("./songs.json", { cache:"no-cache" })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        DATA = j;
+        var c = (j.meta && j.meta.count) || Object.keys(j.songs||{}).length;
+        document.getElementById("status").textContent = "the deck · " + c + " songs";
+      })
+      .catch(function(){ document.getElementById("status").textContent = "offline — data not cached yet"; });
+  }
+  function lookup(id){
+    if(!DATA || !DATA.songs) return null;
+    id = ("" + id).toLowerCase().trim();
+    return DATA.songs[id] ? Object.assign({ id:id }, DATA.songs[id]) : null;
+  }
+
+  function render(){
+    var stage = document.getElementById("stage");
+    var btns  = document.getElementById("btns");
+    if(!song){
+      stage.innerHTML =
+        '<div class="sub">Scan a card, or type its number</div>' +
+        '<div class="idbox"><input id="idInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. s042">' +
+        '<button id="idGo">Go</button></div>';
+      document.getElementById("idGo").onclick = function(){ setSong(document.getElementById("idInput").value); };
+      document.getElementById("idInput").onkeydown = function(e){ if(e.key === "Enter") setSong(this.value); };
+      btns.innerHTML = "";
+      return;
+    }
+    var p = [];
+    if(playing())        p.push('<div class="cd" id="cd">' + clipLeft + 's</div><div class="sub">playing…</div>');
+    else if(!revealed)   p.push('<div class="sub">Card ' + song.id + '</div><div class="sub">tap Play, then guess where it goes on the timeline</div>');
+    if(revealed){
+      p.push('<div class="big">' + (song.year || "—") + '</div>');
+      p.push('<div class="answer">' + esc(song.title) + '</div>');
+      p.push('<div class="sub">' + esc(song.artist) + '</div>');
+      p.push('<div class="sub">' + (song.length || "") + (song.genre ? " · " + esc(song.genre) : "") + " · " + song.id + '</div>');
+    }
+    stage.innerHTML = p.join("");
+
+    var html = [];
+    html.push('<button class="primary" data-a="play">&#9654; Play ' + CLIP + 's</button>');
+    if(!revealed) html.push('<button data-a="reveal">Flip card</button>');
+    html.push('<div class="row2"><button data-a="replay">Replay</button><button data-a="next">Next card</button></div>');
+    btns.innerHTML = html.join("");
+  }
+
+  function setSong(id){
+    var s = lookup(id);
+    if(!s){ alert("No card " + id + " in this deck"); return; }
+    song = s; revealed = false; stopTimers();
+    history.replaceState(null, "", "?s=" + s.id);
+    render();
+  }
+
+  document.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-a]");
+    if(!b) return;
+    switch(b.dataset.a){
+      case "play": case "replay": playClip(); break;
+      case "reveal": revealed = true; stopTimers(); render(); break;
+      case "next": song = null; stopTimers(); history.replaceState(null, "", "./"); render(); break;
+    }
+  });
+
+  function esc(s){ return ("" + s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+  if("serviceWorker" in navigator){ navigator.serviceWorker.register("./sw.js").catch(function(){}); }
+  loadData().then(function(){
+    var q = new URLSearchParams(location.search).get("s");
+    if(q) setSong(q); else render();
+  });
+})();
+</script>
+</body>
+</html>
