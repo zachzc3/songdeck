@@ -48,6 +48,7 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#1b0f0b;font-weight:750}
   a.btn .hint{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-top:2px}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
   .idbox{display:flex;gap:8px}
   .idbox input{flex:1;font:inherit;background:#12141a;border:1px solid var(--line);color:var(--ink);
                border-radius:12px;padding:12px;text-transform:lowercase}
@@ -152,6 +153,17 @@
     id = ("" + id).toLowerCase().trim();
     return DATA.songs[id] ? Object.assign({ id:id }, DATA.songs[id]) : null;
   }
+  function randomSong(){
+    if(!DATA || !DATA.songs) return;
+    var ids = Object.keys(DATA.songs);
+    if(!ids.length) return;
+    // avoid repeating the card you're already on when there's more than one to pick from
+    var pick = ids[Math.floor(Math.random() * ids.length)];
+    if(ids.length > 1 && song && pick === song.id){
+      pick = ids[(ids.indexOf(pick) + 1) % ids.length];
+    }
+    setSong(pick);
+  }
 
   function renderLen(){
     var row = document.getElementById("lenrow");
@@ -171,14 +183,14 @@
         '<button id="idGo">Go</button></div>';
       document.getElementById("idGo").onclick = function(){ setSong(document.getElementById("idInput").value); };
       document.getElementById("idInput").onkeydown = function(e){ if(e.key === "Enter") setSong(this.value); };
-      btns.innerHTML = "";
+      btns.innerHTML = '<button class="primary" data-a="random">&#127922; Random Card (no cards needed)</button>';
       return;
     }
     var len = currentLen();
     var isPlaying = playing();
     var p = [];
     if(isPlaying)         p.push('<div class="cd" id="cd">' + (len.secs ? clipLeft + "s" : mmss(clipElapsed)) + '</div><div class="sub">playing…</div>');
-    else if(!revealed)    p.push('<div class="sub">Card ' + song.id + '</div><div class="sub">tap Play, then guess where it goes on the timeline</div>');
+    else if(!revealed)    p.push('<div class="sub">tap Play, then guess where it goes on the timeline</div>');
     if(revealed){
       p.push('<div class="big">' + (song.year || "—") + '</div>');
       p.push('<div class="answer">' + esc(song.title) + '</div>');
@@ -192,7 +204,7 @@
     else          html.push('<button class="primary" data-a="play">&#9654; Play ' + len.label + '</button>');
     html.push('<a class="btn" href="' + ytWatchUrl(song) + '" target="_blank" rel="noopener">Open in YouTube &#8599;<span class="hint">ad-free if the phone is signed into Premium</span></a>');
     if(!revealed) html.push('<button data-a="reveal">Flip card</button>');
-    html.push('<div class="row2"><button data-a="replay">Replay</button><button data-a="next">Next card</button></div>');
+    html.push('<div class="row3"><button data-a="replay">Replay</button><button data-a="random">&#127922; Random</button><button data-a="next">Next card</button></div>');
     btns.innerHTML = html.join("");
   }
 
@@ -200,7 +212,7 @@
     var s = lookup(id);
     if(!s){ alert("No card " + id + " in this deck"); return; }
     song = s; revealed = false; stopTimers();
-    history.replaceState(null, "", "?s=" + s.id);
+    history.replaceState(null, "", "./"); // keep the id out of the address bar until Flip card
     render();
   }
 
@@ -218,6 +230,7 @@
       case "play": case "replay": playClip(); break;
       case "stop": stopTimers(); render(); break;
       case "reveal": revealed = true; stopTimers(); render(); break;
+      case "random": randomSong(); break;
       case "next": song = null; stopTimers(); history.replaceState(null, "", "./"); render(); break;
     }
   });
