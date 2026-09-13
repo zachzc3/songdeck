@@ -1,0 +1,30 @@
+name: Refresh Spotify streams
+
+on:
+  schedule:
+    - cron: "0 16 * * 1"   # every Monday 16:00 UTC
+  workflow_dispatch: {}     # lets you trigger it manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Refresh streams from kworb
+        run: python build/refresh_streams.py songs.json
+
+      - name: Commit updated numbers
+        run: |
+          git config user.name "songdeck-bot"
+          git config user.email "actions@github.com"
+          git add songs.json build/artist_ids.json
+          git diff --cached --quiet || git commit -m "Weekly Spotify stream refresh"
+          git push
