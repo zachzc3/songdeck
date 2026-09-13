@@ -2,7 +2,7 @@
  * Bump CACHE when you change index.html / manifest so clients refresh.
  * Note: audio still streams from YouTube and needs a connection to play.
  */
-const CACHE = "songdeck-v4";
+const CACHE = "songdeck-v5";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
