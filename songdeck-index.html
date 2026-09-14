@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>Song Deck</title>
+<style>
+  :root{ --bg:#0f1115; --panel:#1a1d24; --line:#2b2f38; --ink:#f0f1f4; --muted:#9aa1ae; --accent:#e0623f; }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;min-height:100dvh;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  /* the YouTube iframe has to be a real, on-screen box for mobile Safari to
+     play it — so we render it and lay an opaque cover over the top */
+  #ytbox{position:fixed;left:50%;top:12px;transform:translateX(-50%);
+         width:280px;height:158px;border-radius:14px;overflow:hidden;z-index:1}
+  #ytbox iframe{width:100%;height:100%;border:0}
+  #ytcover{position:fixed;left:50%;top:12px;transform:translateX(-50%);
+           width:280px;height:158px;border-radius:14px;z-index:2;
+           background:var(--panel);border:1px solid var(--line);
+           display:flex;align-items:center;justify-content:center;
+           font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  main{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;
+       width:100%;max-width:520px;margin:0 auto;padding:190px 24px 24px}
+  .pill{align-self:center;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .lenrow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .lenrow button{padding:9px 14px;font-size:13px;font-weight:650;border-radius:999px;
+                 border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+  .lenrow button.active{background:var(--accent);border-color:var(--accent);color:#1b0f0b}
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:20px;
+         padding:28px 20px;text-align:center;min-height:180px;
+         display:flex;flex-direction:column;justify-content:center;gap:8px}
+  .stage .big{font-size:clamp(2.6rem,14vw,4.2rem);font-weight:800;letter-spacing:-.02em;line-height:1}
+  .stage .answer{font-size:1.35rem;font-weight:700;line-height:1.15}
+  .stage .sub{color:var(--muted);font-size:.95rem}
+  .cd{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:2rem}
+  .btns{display:grid;gap:10px}
+  button, a.btn{font:inherit;font-weight:650;border:1px solid var(--line);background:var(--panel);
+         color:var(--ink);border-radius:14px;padding:16px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+         display:block;text-align:center;text-decoration:none}
+  button:active, a.btn:active{transform:translateY(1px)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#1b0f0b;font-weight:750}
+  a.btn .hint{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-top:2px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .idbox{display:flex;gap:8px}
+  .idbox input{flex:1;font:inherit;background:#12141a;border:1px solid var(--line);color:var(--ink);
+               border-radius:12px;padding:12px;text-transform:lowercase}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:12px}
+</style>
+</head>
+<body>
+<div id="ytbox"><div id="yt"></div></div>
+<div id="ytcover">&#9834; audio only</div>
+
+<main>
+  <div class="pill" id="pill">Timeline</div>
+  <div class="lenrow" id="lenrow"></div>
+  <div class="stage" id="stage"></div>
+  <div class="btns" id="btns"></div>
+</main>
+<footer><span id="status">loading&hellip;</span></footer>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+(function(){
+  "use strict";
+  var LENGTHS = [
+    { key:"15",   label:"15s",       secs:15 },
+    { key:"30",   label:"30s",       secs:30 },
+    { key:"60",   label:"1 min",     secs:60 },
+    { key:"full", label:"Full song", secs:null }
+  ];
+  var clipKey = "30";
+  try{ clipKey = localStorage.getItem("sd_cliplen") || "30"; }catch(e){}
+
+  var DATA = null, player = null, apiReady = false, wantPlay = false;
+  var song = null, revealed = false, clipLeft = 0, clipElapsed = 0, cdTimer = null, clipTimer = null;
+
+  window.onYouTubeIframeAPIReady = function(){
+    player = new YT.Player("yt", {
+      width:"280", height:"158",
+      playerVars:{ controls:0, disablekb:1, modestbranding:1, playsinline:1, rel:0, fs:0 },
+      events:{
+        onReady:function(){ apiReady = true; if(wantPlay){ wantPlay = false; playClip(); } },
+        onStateChange:function(e){ if(e.data === YT.PlayerState.ENDED){ stopTimers(); render(); } }
+      }
+    });
+  };
+
+  function currentLen(){
+    for(var i=0;i<LENGTHS.length;i++) if(LENGTHS[i].key === clipKey) return LENGTHS[i];
+    return LENGTHS[1];
+  }
+  function mmss(s){ var m=Math.floor(s/60), r=s%60; return m+":"+(r<10?"0":"")+r; }
+  function fmtNum(n){
+    if(n >= 1e9) return (n / 1e9).toFixed(n >= 10e9 ? 0 : 1) + "B";
+    if(n >= 1e6) return (n / 1e6).toFixed(n >= 100e6 ? 0 : 1) + "M";
+    if(n >= 1e3) return (n / 1e3).toFixed(0) + "K";
+    return "" + n;
+  }
+  function ytWatchUrl(s){
+    return "https://www.youtube.com/watch?v=" + encodeURIComponent(s.yt) + (s.start ? "&t=" + s.start + "s" : "");
+  }
+
+  function playClip(){
+    if(!song || !song.yt) return;
+    stopTimers();
+    if(!apiReady){ wantPlay = true; return; }
+    try{
+      player.loadVideoById({ videoId: song.yt, startSeconds: song.start || 0 });
+      player.playVideo();
+    }catch(e){}
+    var len = currentLen();
+    clipLeft = len.secs || 0;
+    clipElapsed = 0;
+    cdTimer = setInterval(function(){
+      if(!len.secs){
+        clipElapsed++;
+        var el = document.getElementById("cd");
+        if(el) el.textContent = mmss(clipElapsed);
+        return;
+      }
+      clipLeft--;
+      var el2 = document.getElementById("cd");
+      if(el2) el2.textContent = clipLeft + "s";
+      if(clipLeft <= 0){ stopTimers(); render(); }
+    }, 1000);
+    if(len.secs){
+      clipTimer = setTimeout(function(){ stopTimers(); render(); }, len.secs * 1000);
+    }
+    render(); // cdTimer is already set above, so this correctly shows Stop + the live countdown
+  }
+  function stopTimers(){
+    if(cdTimer){ clearInterval(cdTimer); cdTimer = null; }
+    if(clipTimer){ clearTimeout(clipTimer); clipTimer = null; }
+    try{ if(player && player.pauseVideo) player.pauseVideo(); }catch(e){}
+  }
+  function playing(){ return !!cdTimer; }
+
+  function loadData(){
+    return fetch("./songs.json", { cache:"no-cache" })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        DATA = j;
+        var c = (j.meta && j.meta.count) || Object.keys(j.songs||{}).length;
+        document.getElementById("status").textContent = "the deck · " + c + " songs";
+      })
+      .catch(function(){ document.getElementById("status").textContent = "offline — data not cached yet"; });
+  }
+  function lookup(id){
+    if(!DATA || !DATA.songs) return null;
+    id = ("" + id).toLowerCase().trim();
+    return DATA.songs[id] ? Object.assign({ id:id }, DATA.songs[id]) : null;
+  }
+  function randomSong(){
+    if(!DATA || !DATA.songs) return;
+    var ids = Object.keys(DATA.songs);
+    if(!ids.length) return;
+    // avoid repeating the card you're already on when there's more than one to pick from
+    var pick = ids[Math.floor(Math.random() * ids.length)];
+    if(ids.length > 1 && song && pick === song.id){
+      pick = ids[(ids.indexOf(pick) + 1) % ids.length];
+    }
+    setSong(pick);
+  }
+
+  function renderLen(){
+    var row = document.getElementById("lenrow");
+    row.innerHTML = LENGTHS.map(function(l){
+      return '<button data-len="' + l.key + '" class="' + (l.key === clipKey ? "active" : "") + '">' + l.label + "</button>";
+    }).join("");
+  }
+
+  function render(){
+    renderLen();
+    var stage = document.getElementById("stage");
+    var btns  = document.getElementById("btns");
+    if(!song){
+      stage.innerHTML =
+        '<div class="sub">Scan a card, or type its number</div>' +
+        '<div class="idbox"><input id="idInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. s042">' +
+        '<button id="idGo">Go</button></div>';
+      document.getElementById("idGo").onclick = function(){ setSong(document.getElementById("idInput").value); };
+      document.getElementById("idInput").onkeydown = function(e){ if(e.key === "Enter") setSong(this.value); };
+      btns.innerHTML = '<button class="primary" data-a="random">&#127922; Random Card (no cards needed)</button>';
+      return;
+    }
+    var len = currentLen();
+    var isPlaying = playing();
+    var p = [];
+    if(isPlaying)         p.push('<div class="cd" id="cd">' + (len.secs ? clipLeft + "s" : mmss(clipElapsed)) + '</div><div class="sub">playing…</div>');
+    else if(!revealed)    p.push('<div class="sub">tap Play, then guess where it goes on the timeline</div>');
+    if(revealed){
+      p.push('<div class="big">' + (song.year || "—") + '</div>');
+      p.push('<div class="answer">' + esc(song.title) + '</div>');
+      p.push('<div class="sub">' + esc(song.artist) + '</div>');
+      p.push('<div class="sub">' + (song.length || "") + (song.genre ? " · " + esc(song.genre) : "") + " · " + song.id + '</div>');
+      if(song.streams) p.push('<div class="sub">&#127925; ' + fmtNum(song.streams) + ' Spotify streams</div>');
+    }
+    stage.innerHTML = p.join("");
+
+    var html = [];
+    if(isPlaying) html.push('<button class="primary" data-a="stop">&#9632; Stop</button>');
+    else          html.push('<button class="primary" data-a="play">&#9654; Play ' + len.label + '</button>');
+    html.push('<a class="btn" href="' + ytWatchUrl(song) + '" target="_blank" rel="noopener">Open in YouTube &#8599;<span class="hint">ad-free if the phone is signed into Premium</span></a>');
+    if(!revealed) html.push('<button data-a="reveal">Flip card</button>');
+    html.push('<div class="row3"><button data-a="replay">Replay</button><button data-a="random">&#127922; Random</button><button data-a="next">Next card</button></div>');
+    btns.innerHTML = html.join("");
+  }
+
+  function setSong(id){
+    var s = lookup(id);
+    if(!s){ alert("No card " + id + " in this deck"); return; }
+    song = s; revealed = false; stopTimers();
+    history.replaceState(null, "", "./"); // keep the id out of the address bar until Flip card
+    render();
+  }
+
+  document.addEventListener("click", function(e){
+    var lb = e.target.closest("button[data-len]");
+    if(lb){
+      clipKey = lb.dataset.len;
+      try{ localStorage.setItem("sd_cliplen", clipKey); }catch(err){}
+      render();
+      return;
+    }
+    var b = e.target.closest("button[data-a]");
+    if(!b) return;
+    switch(b.dataset.a){
+      case "play": case "replay": playClip(); break;
+      case "stop": stopTimers(); render(); break;
+      case "reveal": revealed = true; stopTimers(); render(); break;
+      case "random": randomSong(); break;
+      case "next": song = null; stopTimers(); history.replaceState(null, "", "./"); render(); break;
+    }
+  });
+
+  function esc(s){ return ("" + s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+  if("serviceWorker" in navigator){ navigator.serviceWorker.register("./sw.js").catch(function(){}); }
+  loadData().then(function(){
+    var q = new URLSearchParams(location.search).get("s");
+    if(q) setSong(q); else render();
+  });
+})();
+</script>
+</body>
+</html>
