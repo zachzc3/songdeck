@@ -99,6 +99,12 @@
     return LENGTHS[1];
   }
   function mmss(s){ var m=Math.floor(s/60), r=s%60; return m+":"+(r<10?"0":"")+r; }
+  function fmtNum(n){
+    if(n >= 1e9) return (n / 1e9).toFixed(n >= 10e9 ? 0 : 1) + "B";
+    if(n >= 1e6) return (n / 1e6).toFixed(n >= 100e6 ? 0 : 1) + "M";
+    if(n >= 1e3) return (n / 1e3).toFixed(0) + "K";
+    return "" + n;
+  }
   function ytWatchUrl(s){
     return "https://www.youtube.com/watch?v=" + encodeURIComponent(s.yt) + (s.start ? "&t=" + s.start + "s" : "");
   }
@@ -196,6 +202,7 @@
       p.push('<div class="answer">' + esc(song.title) + '</div>');
       p.push('<div class="sub">' + esc(song.artist) + '</div>');
       p.push('<div class="sub">' + (song.length || "") + (song.genre ? " · " + esc(song.genre) : "") + " · " + song.id + '</div>');
+      if(song.streams) p.push('<div class="sub">&#127925; ' + fmtNum(song.streams) + ' Spotify streams</div>');
     }
     stage.innerHTML = p.join("");
 
