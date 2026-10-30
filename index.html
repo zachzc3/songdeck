@@ -18,16 +18,17 @@
   }
   /* the YouTube iframe has to be a real, on-screen box for mobile Safari to
      play it — so we render it and lay an opaque cover over the top */
+  :root{ --vw:min(92vw,420px); }
   #ytbox{position:fixed;left:50%;top:12px;transform:translateX(-50%);
-         width:280px;height:158px;border-radius:14px;overflow:hidden;z-index:1}
-  #ytbox iframe{width:100%;height:100%;border:0}
-  #ytcover{position:fixed;left:50%;top:12px;transform:translateX(-50%);
-           width:280px;height:158px;border-radius:14px;z-index:2;
-           background:var(--panel);border:1px solid var(--line);
-           display:flex;align-items:center;justify-content:center;
-           font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+         width:var(--vw);aspect-ratio:16/9;border-radius:14px;overflow:hidden;z-index:1;background:#000}
+  #ytbox iframe, #ytbox #yt{position:absolute;inset:0;width:100%;height:100%;border:0}
+  #ytcover, #ytshield{position:absolute;z-index:2;display:flex;align-items:center;justify-content:center;
+           font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  #ytcover{inset:0;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+  #ytshield{left:0;right:0;top:0;height:13%;min-height:30px;background:#000;color:#555}
+  .off{display:none !important}
   main{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;
-       width:100%;max-width:520px;margin:0 auto;padding:190px 24px 24px}
+       width:100%;max-width:520px;margin:0 auto;padding:calc(var(--vw) * 9 / 16 + 30px) 24px 24px}
   .pill{align-self:center;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
   .lenrow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
   .lenrow button{padding:9px 14px;font-size:13px;font-weight:650;border-radius:999px;
@@ -56,8 +57,7 @@
 </style>
 </head>
 <body>
-<div id="ytbox"><div id="yt"></div></div>
-<div id="ytcover">&#9834; audio only</div>
+<div id="ytbox"><div id="yt"></div><div id="ytshield" class="off">title hidden</div><div id="ytcover">&#9834; audio only</div></div>
 
 <main>
   <div class="pill" id="pill">Timeline</div>
@@ -79,14 +79,16 @@
   ];
   var clipKey = "30";
   try{ clipKey = localStorage.getItem("sd_cliplen") || "30"; }catch(e){}
+  var showVideo = true; // video on by default; the Video button turns it back into audio-only
+  try{ showVideo = localStorage.getItem("sd_video") !== "0"; }catch(e){}
 
   var DATA = null, player = null, apiReady = false, wantPlay = false;
   var song = null, revealed = false, clipLeft = 0, clipElapsed = 0, cdTimer = null, clipTimer = null;
 
   window.onYouTubeIframeAPIReady = function(){
     player = new YT.Player("yt", {
-      width:"280", height:"158",
-      playerVars:{ controls:0, disablekb:1, modestbranding:1, playsinline:1, rel:0, fs:0 },
+      width:"100%", height:"100%",
+      playerVars:{ controls:1, modestbranding:1, playsinline:1, rel:0, fs:1 },
       events:{
         onReady:function(){ apiReady = true; if(wantPlay){ wantPlay = false; playClip(); } },
         onStateChange:function(e){ if(e.data === YT.PlayerState.ENDED){ stopTimers(); render(); } }
@@ -175,10 +177,17 @@
     var row = document.getElementById("lenrow");
     row.innerHTML = LENGTHS.map(function(l){
       return '<button data-len="' + l.key + '" class="' + (l.key === clipKey ? "active" : "") + '">' + l.label + "</button>";
-    }).join("");
+    }).join("") + '<button data-vid="1" class="' + (showVideo ? "active" : "") + '">&#9654; Video ' + (showVideo ? "on" : "off") + "</button>";
   }
 
+  function updateVideoBox(){
+    var cover = document.getElementById("ytcover"), shield = document.getElementById("ytshield");
+    cover.classList.toggle("off", showVideo && !!song);
+    cover.innerHTML = showVideo ? "&#9654; video" : "&#9834; audio only";
+    shield.classList.toggle("off", !(showVideo && song && !revealed)); // hide the title bar until the card is flipped
+  }
   function render(){
+    updateVideoBox();
     renderLen();
     var stage = document.getElementById("stage");
     var btns  = document.getElementById("btns");
@@ -224,6 +233,13 @@
   }
 
   document.addEventListener("click", function(e){
+    var vb = e.target.closest("button[data-vid]");
+    if(vb){
+      showVideo = !showVideo;
+      try{ localStorage.setItem("sd_video", showVideo ? "1" : "0"); }catch(err){}
+      render();
+      return;
+    }
     var lb = e.target.closest("button[data-len]");
     if(lb){
       clipKey = lb.dataset.len;
